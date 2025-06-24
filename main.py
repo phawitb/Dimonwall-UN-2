@@ -18,66 +18,108 @@ feature_cols = [
     'Language_skill_score', 'Rate_of_success_100_scale'
 ]
 
+def convert_to_card_format(person):
+    try:
+        physical = person.get("PT Score", 0)
+        cognitive = round(sum([
+            person.get("KPI from Supervisor", 0),
+            person.get("KPI from Peers", 0),
+            person.get("KPI from Subordinate", 0)
+        ]) / 3, 2)
+        performance = person.get("Rate_of_success_100_scale", 0)
+        experience = person.get("Deployment_experience_score", 0)
+        lang_score = min(person.get("Language_skill_score", 0) * 20, 100)
+
+        badges = []
+        if person.get("Military Course"):
+            badges.append(person["Military Course"])
+        if person.get("Expert Number Description"):
+            badges.append(person["Expert Number Description"])
+
+        language_tag = person.get("Extra Language Skills", "").strip()
+
+        # Determine score column
+        if "Predicted_UNMEM_Score" in person:
+            predicted_score = person["Predicted_UNMEM_Score"]
+        elif "Predicted_UNSO_Score" in person:
+            predicted_score = person["Predicted_UNSO_Score"]
+        elif "Predicted_Avg_Score" in person:
+            predicted_score = person["Predicted_Avg_Score"]
+        else:
+            predicted_score = 0.0
+
+        return {
+            "name": person.get("Name", ""),
+            "rank": person.get("Rank", ""),
+            "radar": {
+                "Physical": physical,
+                "Cognitive": cognitive,
+                "Performance": performance,
+                "Experience": experience,
+                "Language": lang_score
+            },
+            "badges": badges,
+            "language_tag": language_tag,
+            "predicted_score": round(predicted_score, 2)
+        }
+    except Exception as e:
+        return {"error": f"Card conversion failed: {str(e)}"}
+
+
 @app.get("/predict/mission")
 def predict_mission(
     gender: str = Query(..., example="Female"),
     ranks: List[str] = Query(..., example=["พันตรี", "ร้อยตรี"]),
     mission_type: str = Query(..., example="UNMEM"),
     n_person: Optional[int] = Query(None, ge=1, description="Number of top persons to return"),
-    short_detail: bool = Query(True, description="Return short detail only (id, name, rank, score)")
+    short_detail: bool = Query(True, description="Return short detail only (card only or with full)")
 ):
     try:
         df = pd.read_csv(DATA_PATH)
     except FileNotFoundError:
         return {"error": "CSV data file not found."}
 
-    # Filter gender
     if gender != "All":
         df = df[df['Gender'] == gender]
-
-    # Filter ranks
     df = df[df['Rank'].isin(ranks)]
 
     if df.empty:
         return {"message": "No records matched the filter criteria."}
 
     if mission_type == "All":
-        # Load both models
-        model1_path = os.path.join(OUTPUT_DIR, "UNMEM_model.pkl")
-        model2_path = os.path.join(OUTPUT_DIR, "UNSO_model.pkl")
-        if not os.path.exists(model1_path) or not os.path.exists(model2_path):
-            return {"error": "One or both model files not found for 'All' mission type."}
-        
-        model1 = joblib.load(model1_path)
-        model2 = joblib.load(model2_path)
+        mem_path = os.path.join(OUTPUT_DIR, "UNMEM_model.pkl")
+        so_path = os.path.join(OUTPUT_DIR, "UNSO_model.pkl")
+        if not os.path.exists(mem_path) or not os.path.exists(so_path):
+            return {"error": "One or both model files for 'All' mission type not found."}
+        model1 = joblib.load(mem_path)
+        model2 = joblib.load(so_path)
         pred1 = model1.predict(df[feature_cols])
         pred2 = model2.predict(df[feature_cols])
         df["Predicted_Avg_Score"] = (pred1 + pred2) / 2
-        sort_col = "Predicted_Avg_Score"
+        score_col = "Predicted_Avg_Score"
     else:
-        # Single model case
         model_file = f"{mission_type}_model.pkl"
         model_path = os.path.join(OUTPUT_DIR, model_file)
         if not os.path.exists(model_path):
             return {"error": f"Model file not found: {model_file}"}
         model = joblib.load(model_path)
-        predictions = model.predict(df[feature_cols])
-        pred_col = f"Predicted_{mission_type}_Score"
-        df[pred_col] = predictions
-        sort_col = pred_col
+        pred = model.predict(df[feature_cols])
+        score_col = f"Predicted_{mission_type}_Score"
+        df[score_col] = pred
 
-    df_sorted = df.sort_values(by=sort_col, ascending=False)
+    df_sorted = df.sort_values(by=score_col, ascending=False)
     if n_person:
         df_sorted = df_sorted.head(n_person)
 
-    result_col = sort_col if short_detail else None
-
-    if short_detail:
-        result_cols = ['id', 'Name', 'Rank', 'Gender', sort_col]
-    else:
-        result_cols = list(df_sorted.columns)
-
-    results = df_sorted[result_cols].fillna("").to_dict(orient="records")
+    # Convert each row to card + optionally full detail
+    results = []
+    for _, row in df_sorted.iterrows():
+        row_dict = row.fillna("").to_dict()
+        card = convert_to_card_format(row_dict)
+        if short_detail:
+            results.append({"card": card})
+        else:
+            results.append({"card": card, "detail": row_dict})
 
     return {
         "filter": {"gender": gender, "ranks": ranks, "mission_type": mission_type},
