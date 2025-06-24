@@ -1,10 +1,23 @@
 from fastapi import FastAPI, Query, Path
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import pandas as pd
 import joblib
 import os
 
 app = FastAPI(title="Mission Score Predictor API")
+# === FastAPI App ===
+app = FastAPI(title="Bazi + User Management API")
+
+# === CORS Middleware ===
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 OUTPUT_DIR = "output"
 DATA_PATH = "Mockdata_Clean.csv"
