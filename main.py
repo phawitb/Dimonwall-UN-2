@@ -31,28 +31,49 @@ def predict_mission(
     except FileNotFoundError:
         return {"error": "CSV data file not found."}
 
-    df = df[df['Gender'] == gender]
+    # Filter gender
+    if gender != "All":
+        df = df[df['Gender'] == gender]
+
+    # Filter ranks
     df = df[df['Rank'].isin(ranks)]
 
     if df.empty:
         return {"message": "No records matched the filter criteria."}
 
-    model_file = f"{mission_type}_model.pkl"
-    model_path = os.path.join(OUTPUT_DIR, model_file)
+    if mission_type == "All":
+        # Load both models
+        model1_path = os.path.join(OUTPUT_DIR, "UNMEM_model.pkl")
+        model2_path = os.path.join(OUTPUT_DIR, "UNSO_model.pkl")
+        if not os.path.exists(model1_path) or not os.path.exists(model2_path):
+            return {"error": "One or both model files not found for 'All' mission type."}
+        
+        model1 = joblib.load(model1_path)
+        model2 = joblib.load(model2_path)
+        pred1 = model1.predict(df[feature_cols])
+        pred2 = model2.predict(df[feature_cols])
+        df["Predicted_Avg_Score"] = (pred1 + pred2) / 2
+        sort_col = "Predicted_Avg_Score"
+    else:
+        # Single model case
+        model_file = f"{mission_type}_model.pkl"
+        model_path = os.path.join(OUTPUT_DIR, model_file)
+        if not os.path.exists(model_path):
+            return {"error": f"Model file not found: {model_file}"}
+        model = joblib.load(model_path)
+        predictions = model.predict(df[feature_cols])
+        pred_col = f"Predicted_{mission_type}_Score"
+        df[pred_col] = predictions
+        sort_col = pred_col
 
-    if not os.path.exists(model_path):
-        return {"error": f"Model file not found: {model_file}"}
-
-    model = joblib.load(model_path)
-    predictions = model.predict(df[feature_cols])
-    df[f"Predicted_{mission_type}_Score"] = predictions
-
-    df_sorted = df.sort_values(by=f"Predicted_{mission_type}_Score", ascending=False)
+    df_sorted = df.sort_values(by=sort_col, ascending=False)
     if n_person:
         df_sorted = df_sorted.head(n_person)
 
+    result_col = sort_col if short_detail else None
+
     if short_detail:
-        result_cols = ['id', 'Name', 'Rank', 'Gender', f"Predicted_{mission_type}_Score"]
+        result_cols = ['id', 'Name', 'Rank', 'Gender', sort_col]
     else:
         result_cols = list(df_sorted.columns)
 
@@ -65,6 +86,7 @@ def predict_mission(
         "count": len(results),
         "results": results
     }
+
 
 @app.get("/person/id/{person_id}")
 def get_person_by_id(person_id: str = Path(..., example="U0005")):
