@@ -41,7 +41,13 @@ def convert_to_card_format(person):
         ]) / 3, 2)
         performance = person.get("Rate_of_success_100_scale", 0)
         experience = person.get("Deployment_experience_score", 0)
-        lang_score = min(person.get("Language_skill_score", 0) * 20, 100)
+        # lang_score = min(person.get("Language_skill_score", 0) * 20, 100)
+        lang_score = person.get("UN English Test Score",0)
+        leadership = person.get("KPI from Subordinate", 0)
+        teamwork = person.get("KPI from Peers", 0)
+        objective = person.get("KPI from Supervisor", 0)
+
+        
 
         badges = []
         if person.get("Military Course"):
@@ -50,7 +56,7 @@ def convert_to_card_format(person):
             badges.append(person["Expert Number Description"])
 
         language_tag = person.get("Extra Language Skills", "").strip()
-
+        
         # Determine score column
         if "Predicted_UNMEM_Score" in person:
             predicted_score = person["Predicted_UNMEM_Score"]
@@ -65,11 +71,11 @@ def convert_to_card_format(person):
             "name": person.get("Name", ""),
             "rank": person.get("Rank", ""),
             "radar": {
+                "Language": lang_score,
                 "Physical": physical,
-                "Cognitive": cognitive,
-                "Performance": performance,
-                "Experience": experience,
-                "Language": lang_score
+                "Leadership": leadership,
+                "Teamwork": teamwork,
+                "Objective": objective
             },
             "badges": badges,
             "language_tag": language_tag,

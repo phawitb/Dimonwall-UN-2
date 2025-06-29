@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import (
     mean_absolute_error,
     r2_score,
-    root_mean_squared_error
+    root_mean_squared_error  # ✅ Use built-in RMSE function
 )
 
 OUTPUT_DIR = "output"
@@ -70,6 +70,12 @@ def train_and_save_best_model(df, target_col, name):
                 params = {}
 
             eval_metrics = evaluate_model(best_estimator, X_train, X_test, y_train, y_test)
+
+            # Print model performance
+            print(f"📊 Model: {model_name} | "
+                  f"Train R²: {eval_metrics['Train_R2']:.4f} | "
+                  f"Test R²: {eval_metrics['Test_R2']:.4f} | "
+                  f"Test RMSE: {eval_metrics['Test_RMSE']:.4f}")
 
             # Save training log
             log_entry = {
@@ -133,8 +139,16 @@ def predict_mission(gender, ranks, mission_type):
     model = joblib.load(model_path)
     predictions = model.predict(df[feature_cols])
     df[f"Predicted_{mission_type}_Score"] = predictions
+    df[f"Actual_{mission_type}_Score"] = df[f"{mission_type}_Mission_success_score"]
 
-    print(df[['id', 'Name', 'Rank', 'Gender', f"Predicted_{mission_type}_Score"]].head())
+    result_df = df[['id', 'Name', 'Rank', 'Gender',
+                    f"Actual_{mission_type}_Score", f"Predicted_{mission_type}_Score"]]
+    print(result_df.head())
+
+    result_df.to_csv(
+        os.path.join(OUTPUT_DIR, f"{mission_type}_prediction_vs_actual.csv"),
+        index=False
+    )
 
 # 🚀 Entry point
 if __name__ == "__main__":
